@@ -1,0 +1,40 @@
+# Python
+backend/venv/
+backend/venv311/
+backend/tf215/
+**/__pycache__/
+*.pyc
+
+# Environment
+backend/.env
+frontend/.env
+
+# React
+frontend/node_modules/
+frontend/dist/
+
+# Dataset
+backend/dataset/
+
+# Reports
+backend/report_*.pdf
+backend/reports/
+
+# Models
+backend/leaf_model.h5
+backend/leaf_model_old.h5
+backend/leaf_model.onnx
+
+# Logs
+*.log
+backend/backend.log
+
+# Cache
+backend/.pytest_cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/

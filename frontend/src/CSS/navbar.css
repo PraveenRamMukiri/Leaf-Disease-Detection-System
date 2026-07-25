@@ -1,0 +1,616 @@
+/* ===========================
+   PROFESSIONAL NAVBAR
+=========================== */
+.navbar{
+
+position:fixed;
+
+top:18px;
+
+left:50%;
+
+transform:translateX(-50%);
+
+width:94%;
+
+height:80px;
+
+padding:0 28px;
+
+display:flex;
+
+justify-content:space-between;
+
+align-items:center;
+
+background:rgba(255,255,255,.92);
+
+backdrop-filter:blur(18px);
+
+-webkit-backdrop-filter:blur(18px);
+
+border-radius:22px;
+
+box-shadow:0 15px 40px rgba(0,0,0,.08);
+
+border:1px solid rgba(255,255,255,.4);
+
+z-index:9999;
+
+transition:.35s;
+
+}
+
+/* ===========================
+LOGO
+=========================== */
+
+.nav-logo{
+
+    display:flex;
+    align-items:center;
+    gap:10px;
+
+    color:#2E7D32;
+
+    font-size:22px;
+    font-weight:700;
+
+}
+
+.logo-icon{
+
+    font-size:34px;
+
+}
+.nav-logo span{
+
+    white-space:nowrap;
+
+}
+
+/* ===========================
+MENU
+=========================== */
+
+.nav-links{
+
+    display:flex;
+
+    align-items:center;
+
+    gap:35px;
+
+    list-style:none;
+
+}
+
+.nav-links a{
+
+    text-decoration:none;
+
+    color:#444;
+
+    font-size:16px;
+
+    font-weight:600;
+
+    transition:.3s;
+
+}
+
+.nav-links a:hover{
+
+    color:#2E7D32;
+
+}
+
+/* ===========================
+RIGHT SIDE
+=========================== */
+
+.nav-right{
+
+    display:flex;
+
+    align-items:center;
+
+    gap:18px;
+
+}
+
+/* ===========================
+LANGUAGE
+=========================== */
+
+.language-select{
+
+    padding:10px 14px;
+
+    border-radius:10px;
+
+    border:1px solid #d6d6d6;
+
+    background:white;
+
+    font-size:15px;
+
+    cursor:pointer;
+
+}
+
+.language-select:focus{
+
+    outline:none;
+
+    border-color:#2E7D32;
+
+}
+
+/* ===========================
+USER
+=========================== */
+
+.user-box{
+
+    display:flex;
+
+    align-items:center;
+
+    gap:10px;
+
+    padding:8px 16px;
+
+    background:#F5F7F6;
+
+    border-radius:30px;
+
+    color:#2E7D32;
+
+    font-weight:600;
+
+}
+
+.user-icon{
+
+    font-size:28px;
+
+    color:#2E7D32;
+
+}
+
+.user-box span{
+
+    font-weight:600;
+
+    color:#333;
+
+}
+
+/* ===========================
+LOGOUT
+=========================== */
+
+.logout-btn{
+
+    background:#2E7D32;
+
+    color:white;
+
+    border:none;
+
+    padding:10px 18px;
+
+    border-radius:8px;
+
+    cursor:pointer;
+
+    transition:.3s;
+
+}
+
+.logout-btn:hover{
+
+    background:#1B5E20;
+
+}
+
+
+/* ===========================
+RESPONSIVE
+=========================== */
+
+@media(max-width:1100px){
+
+.nav-links{
+
+    display:none;
+
+}
+
+.navbar{
+
+    padding:0 20px;
+
+}
+
+}
+
+@media(max-width:650px){
+
+.user-box span{
+
+    display:none;
+
+}
+
+.language-select{
+
+    width:90px;
+
+}
+
+.nav-logo span{
+
+    font-size:24px;
+
+}
+
+}
+.nav-links button{
+
+    background:none;
+
+    border:none;
+
+    color:#2E7D32;
+
+    font-size:16px;
+
+    font-weight:600;
+
+    cursor:pointer;
+
+    padding:10px 18px;
+
+    border-radius:10px;
+
+    transition:0.3s;
+
+}
+
+.nav-links button:hover{
+
+background:#2E7D32;
+
+    color:white;
+
+}
+
+html{
+
+scroll-behavior:smooth;
+
+}
+
+.user-box{
+display:flex;
+align-items:center;
+gap:10px;
+padding:10px 18px;
+background:#F4FAF4;
+border-radius:40px;
+cursor:pointer;
+font-weight:600;
+position:relative;
+}
+
+.user-box:hover{
+background:#E8F5E9;
+}
+
+.profile-dropdown{
+position:absolute;
+top:75px;
+right:30px;
+width:240px;
+background:#fff;
+border-radius:15px;
+box-shadow:0 10px 30px rgba(0,0,0,.15);
+padding:15px;
+z-index:9999;
+}
+
+.profile-dropdown p{
+margin:10px 0;
+font-size:15px;
+color:#333;
+}
+
+.profile-dropdown hr{
+margin:12px 0;
+border:none;
+border-top:1px solid #ddd;
+}
+
+.profile-logout{
+width:100%;
+padding:10px;
+background:#2E7D32;
+color:white;
+border:none;
+border-radius:10px;
+cursor:pointer;
+font-weight:600;
+}
+
+.profile-logout:hover{
+background:#1B5E20;
+}
+
+.activeNav{
+
+background:#2E7D32;
+
+color:white !important;
+
+border-radius:12px;
+
+padding:10px 18px;
+
+}
+
+.nav-links button{
+
+display:flex;
+
+align-items:center;
+
+gap:8px;
+
+}
+
+.profile-header{
+
+display:flex;
+
+align-items:center;
+
+gap:12px;
+
+padding-bottom:10px;
+
+}
+
+.profile-big-icon{
+
+font-size:42px;
+
+color:#2E7D32;
+
+}
+
+.profile-dropdown{
+
+position:absolute;
+
+top:75px;
+
+right:20px;
+
+background:white;
+
+width:240px;
+
+border-radius:15px;
+
+box-shadow:0 15px 40px rgba(0,0,0,.15);
+
+padding:18px;
+
+z-index:999;
+
+animation:fadeIn .2s ease;
+
+}
+
+.profile-dropdown hr{
+
+margin:12px 0;
+
+border:none;
+
+border-top:1px solid #eee;
+
+}
+
+.profile-logout{
+
+width:100%;
+
+background:#2E7D32;
+
+color:white;
+
+border:none;
+
+padding:12px;
+
+border-radius:10px;
+
+cursor:pointer;
+
+font-weight:600;
+
+transition:.3s;
+
+}
+
+.profile-logout:hover{
+
+background:#1B5E20;
+
+}
+
+@keyframes fadeIn{
+
+from{
+
+opacity:0;
+
+transform:translateY(-10px);
+
+}
+
+to{
+
+opacity:1;
+
+transform:translateY(0);
+
+}
+
+}
+.logo-circle{
+
+width:62px;
+
+height:62px;
+
+border-radius:50%;
+
+background:white;
+
+display:flex;
+
+align-items:center;
+
+justify-content:center;
+
+box-shadow:0 10px 25px rgba(0,0,0,.08);
+
+}
+
+.logo-leaf{
+
+font-size:32px;
+
+color:#2E7D32;
+
+}
+
+.logo-text{
+
+display:flex;
+
+flex-direction:column;
+
+margin-left:14px;
+
+}
+
+.logo-text h2{
+
+margin:0;
+
+font-size:30px;
+
+font-weight:700;
+
+color:#1B5E20;
+
+line-height:1.1;
+
+}
+
+.logo-text span{
+
+font-size:18px;
+
+font-weight:500;
+
+color:#388E3C;
+
+margin-top:2px;
+
+}
+
+.nav-logo{
+
+display:flex;
+
+align-items:center;
+
+}
+
+.nav-links{
+
+display:flex;
+
+gap:18px;
+
+list-style:none;
+
+margin:0;
+
+padding:0;
+
+}
+
+.nav-links button{
+
+padding:12px 22px;
+
+border:none;
+
+border-radius:40px;
+
+background:transparent;
+
+font-size:17px;
+
+font-weight:600;
+
+cursor:pointer;
+
+transition:.3s;
+
+color:#2E7D32;
+
+}
+
+.nav-links button:hover{
+
+background:#EDF8EE;
+
+transform:translateY(-2px);
+
+}
+
+.activeNav{
+
+background:#E8F5E9 !important;
+
+color:#2E7D32 !important;
+
+box-shadow:0 8px 18px rgba(46,125,50,.15);
+
+}
+
+.navbar-logo{
+    width:42px;
+    height:42px;
+    object-fit:contain;
+}
+
+.logo-circle{
+    width:54px;
+    height:54px;
+    border-radius:50%;
+    background:#F3FFF4;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    box-shadow:0 4px 15px rgba(46,125,50,.15);
+    overflow:hidden;
+}

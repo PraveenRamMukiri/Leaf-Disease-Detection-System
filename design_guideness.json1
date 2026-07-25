@@ -1,0 +1,115 @@
+{
+  "theme": "light",
+  "archetype": "Organic & Earthy",
+  "colors": {
+    "background": "bg-stone-50",
+    "surface": "bg-white",
+    "surface_glass": "bg-white/70 backdrop-blur-xl",
+    "border": "border-stone-200",
+    "primary": "bg-emerald-700 text-white",
+    "primary_hover": "hover:bg-emerald-800",
+    "secondary": "bg-stone-100 text-stone-900",
+    "secondary_hover": "hover:bg-stone-200",
+    "accent_warning": "bg-amber-100 text-amber-900 border-amber-200",
+    "accent_danger": "bg-rose-100 text-rose-900 border-rose-200",
+    "accent_success": "bg-emerald-100 text-emerald-900 border-emerald-200",
+    "text_primary": "text-stone-900",
+    "text_secondary": "text-stone-500",
+    "chart_primary": "#047857",
+    "chart_secondary": "#A8A29E"
+  },
+  "typography": {
+    "heading_font": "Outfit",
+    "body_font": "Manrope",
+    "h1": "text-4xl sm:text-5xl font-semibold tracking-tight text-stone-900",
+    "h2": "text-2xl sm:text-3xl font-medium tracking-tight text-stone-900",
+    "h3": "text-xl sm:text-2xl font-medium tracking-tight text-stone-800",
+    "h4": "text-lg sm:text-xl font-medium tracking-tight text-stone-800",
+    "body": "text-base font-normal leading-relaxed text-stone-600",
+    "label": "text-xs font-semibold uppercase tracking-[0.2em] text-stone-500"
+  },
+  "layout": {
+    "spacing_system": "p-2, p-4, p-6, p-8, p-12",
+    "container_padding": "p-6 sm:p-8",
+    "grid_bento_control_room": "grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6",
+    "radius": "rounded-2xl",
+    "radius_small": "rounded-xl",
+    "shadow": "shadow-sm shadow-stone-200/50"
+  },
+  "motion": {
+    "hover": "transition-all duration-200 ease-in-out hover:-translate-y-1 hover:shadow-md",
+    "entrance": "animate-in fade-in slide-in-from-bottom-4 duration-500",
+    "tabs": "transition-transform duration-300 ease-in-out"
+  },
+  "components": {
+    "card": "bg-white rounded-2xl border border-stone-200 p-6 shadow-sm",
+    "card_hover": "bg-white rounded-2xl border border-stone-200 p-6 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md hover:border-emerald-200 cursor-pointer",
+    "button_primary": "inline-flex items-center justify-center px-6 py-3 rounded-full bg-emerald-700 text-white font-medium hover:bg-emerald-800 transition-colors focus:ring-2 focus:ring-emerald-300 focus:outline-none disabled:opacity-50",
+    "button_secondary": "inline-flex items-center justify-center px-6 py-3 rounded-full bg-stone-100 text-stone-900 font-medium hover:bg-stone-200 transition-colors focus:ring-2 focus:ring-stone-300 focus:outline-none disabled:opacity-50",
+    "badge_outline": "inline-flex items-center px-2.5 py-0.5 rounded-full border border-stone-200 text-xs font-medium text-stone-600",
+    "input": "flex h-12 w-full rounded-xl border border-stone-200 bg-transparent px-4 py-2 text-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-stone-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+  },
+  "domain_requirements": {
+    "dataset": [
+      "Diverse environments",
+      "Multiple seasons",
+      "Custom upload & Public plant disease datasets"
+    ],
+    "models": [
+      "CNN + CBAM",
+      "YOLOv8",
+      "ResNet",
+      "DenseNet",
+      "Vision Transformer (ViT)",
+      "EfficientNet",
+      "MobileNet",
+      "VGG",
+      "Lightweight models"
+    ],
+    "xai": [
+      "Grad-CAM",
+      "Score-CAM",
+      "SHAP",
+      "LIME"
+    ],
+    "deployment": [
+      "Edge AI deployment (Web, Mobile, IoT)",
+      "Model export formats: TFLite, CoreML, ONNX"
+    ]
+  },
+  "media": {
+    "images": [
+      {
+        "url": "https://static.prod-images.emergentagent.com/jobs/89dadda0-c9c6-4cc7-b5ce-5af5ccc6bdfa/images/847efefeffaba65bdb1672da99faee734ecea91e4af57f6e2f285422bafd4528.png",
+        "category": "hero_background",
+        "description": "Abstract visualization of AI neural networks merged with organic plant leaves. Use in authentication pages or hero banners."
+      },
+      {
+        "url": "https://static.prod-images.emergentagent.com/jobs/89dadda0-c9c6-4cc7-b5ce-5af5ccc6bdfa/images/8c40c4341ad6816a087c79e68e9a05473196824ecf045b2c57759af82e1dd95f.png",
+        "category": "xai_placeholder",
+        "description": "Microscopic style macro photography of a leaf with glowing heatmap overlays. Use as a placeholder for XAI heatmap visualizations if no actual data is present."
+      },
+      {
+        "url": "https://images.pexels.com/photos/4975400/pexels-photo-4975400.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "category": "user_context",
+        "description": "Farmer using a tablet in a lush field. Use in onboarding, empty states, or landing page."
+      }
+    ],
+    "icons": {
+      "library": "lucide-react",
+      "instruction": "Use lucide-react for all icons. Stroke width 1.5 for elegance."
+    }
+  },
+  "instructions_to_main_agent": [
+    "Follow the Organic & Earthy archetype with a Light theme. Do not use dark mode globally.",
+    "Ensure all interactive elements have data-testid attributes (e.g., data-testid='upload-dataset-button').",
+    "Use standard Tailwind classes. For Recharts, use the primary color #047857 and secondary #A8A29E.",
+    "Implement Shadcn UI for standard components like Tabs, Dialogs, Select, and Tables. Override their default radius to rounded-2xl to match the organic feel.",
+    "Do not use transparent backgrounds under headers; use bg-white/70 backdrop-blur-xl.",
+    "XAI Heatmap images should overlap the original image. You can simulate XAI by overlaying a heatmap colored div/image over the original image with mix-blend-multiply opacity.",
+    "Build a bento grid for the dashboard widgets: 'grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6'. Emphasize data clarity and hierarchy.",
+    "Ensure UI accommodates all models (CNN+CBAM, YOLO, ResNet, DenseNet, ViT, EfficientNet, MobileNet, VGG) in a scrollable list or table, avoiding overwhelming the user.",
+    "Include export UI for TFLite, CoreML, and ONNX clearly targeted at Edge AI deployment.",
+    "Avoid the color teal (#1B93A4) entirely."
+  ]
+}
