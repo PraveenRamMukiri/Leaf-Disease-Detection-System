@@ -1,7 +1,7 @@
 
 import { Routes, Route } from "react-router-dom";
 
-import Login from "./auth/Login";
+import Login from "./auth/login";
 import Register from "./auth/Register";
 import ProtectedRoute from "./auth/ProtectedRoute";
 import DetectDisease from "./pages/DetectDisease";
