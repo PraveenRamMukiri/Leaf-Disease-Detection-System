@@ -37,11 +37,12 @@ load_dotenv(ROOT_DIR / '.env')
 async def get_current_user(
     authorization: str = Header(None)
 ):
+    
     print("=" * 60)
     print("Authorization Header Received:")
     print(repr(authorization))
     print("=" * 60)
-
+    
     if authorization is None:
         raise HTTPException(
             status_code=401,
