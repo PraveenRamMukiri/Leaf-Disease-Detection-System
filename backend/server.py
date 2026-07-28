@@ -736,11 +736,10 @@ async def detect_disease(
 
 @api_router.get("/detections")
 async def list_detections(
-    authorization: str = Header(None)
+    credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
-    
 
-    user = await get_current_user(authorization)
+    user = await get_current_user(credentials)
 
     detections = await db.detections.find(
        {"user_email": user["email"]},
@@ -1055,10 +1054,11 @@ def get_localized_report_text(detection: dict, language: str = "en") -> dict:
 @api_router.get("/report/{detection_id}")
 async def download_report(
     detection_id: str,
-    authorization: str = Header(None),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     lang: str = "en"
 ):
-    user = await get_current_user(authorization)
+
+    user = await get_current_user(credentials)
 
     detection = await db.detections.find_one({
         "id": detection_id,
