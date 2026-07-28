@@ -43,7 +43,7 @@ background:#f4f8f5;
     position:relative;
     overflow:hidden;
 
-    background-image:url("images/dashboard-bg.jpg");
+    background-image:url("/images/dashboard-bg.jpg");
     background-size:cover;
     background-position:center;
     background-repeat:no-repeat;
@@ -1285,7 +1285,7 @@ box-shadow:0 20px 45px rgba(0,0,0,.15);
     position:absolute;
     inset:0;
 
-    background-image:url("Prediction-bg.png");
+    background-image:url("/Prediction-bg.png");
 
     background-size:cover;
     background-position:center;
