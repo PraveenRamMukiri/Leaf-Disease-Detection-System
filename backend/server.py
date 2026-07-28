@@ -786,11 +786,10 @@ async def export_model(model_id: str, format: str):
 
 @api_router.get("/dashboard")
 async def dashboard(
-    authorization: str = Header(None)
+     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
-    
 
-    user = await get_current_user(authorization)
+    user = await get_current_user(credentials)
 
     total = await db.detections.count_documents(
         {"user_email": user["email"]}
