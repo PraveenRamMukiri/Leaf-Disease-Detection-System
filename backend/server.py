@@ -8,7 +8,8 @@ from fastapi import (
 )
 from jose import jwt, JWTError
 from auth import SECRET_KEY, ALGORITHM
-
+from fastapi import Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 import os
@@ -31,33 +32,21 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph
 from reportlab.lib.styles import getSampleStyleSheet
 from auth import *
 
+security = HTTPBearer()
+
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 async def get_current_user(
-    authorization: str = Header(None)
+    credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     
     print("=" * 60)
     print("Authorization Header Received:")
-    print(repr(authorization))
+    print(repr(credentials))
     print("=" * 60)
     
-    if authorization is None:
-        raise HTTPException(
-            status_code=401,
-            detail="Authorization header missing"
-        )
-
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=401,
-            detail="Bearer token missing"
-        )
-
-    token = authorization.split(" ")[1]
-
-    print("TOKEN =", token)
+    token = credentials.credentials
 
     try:
         payload = jwt.decode(
@@ -653,9 +642,9 @@ class_names = [
 @api_router.post("/inference")
 async def detect_disease(
     file: UploadFile = File(...),
-    authorization: str = Header(None)
+    credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
-    user = await get_current_user(authorization)
+    user = await get_current_user(credentials)
     try:
         # Read image
         image = Image.open(file.file).convert("RGB")
