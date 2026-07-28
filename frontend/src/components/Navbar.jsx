@@ -16,7 +16,7 @@ import {
 } from "react-icons/fa";
 
 import { useLanguage } from "../context/LanguageContext";
-import "../css/navbar.css";
+import "../CSS/navbar.css";
 
 export default function Navbar({ activeSection, setActiveSection }) {
   const navigate = useNavigate();
