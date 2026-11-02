@@ -13,6 +13,16 @@ import "./DetectDisease.css";
 
 import React,{useState,useEffect} from "react";
 import axios from "axios";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer
+} from "recharts";
 
 const API=import.meta.env.VITE_BACKEND_URL;
 
@@ -28,6 +38,20 @@ const [file,setFile]=useState(null);
 
 const [preview,setPreview]=useState(null);
 const [result,setResult]=useState(null);
+const comparisonData = [
+  {
+    method: "CSAQF",
+    score: Number(result?.csaqf_score_percent || 0),
+  },
+  {
+    method: "CSAQF-V4",
+    score: Number(result?.csaqf_v4_score_percent || 0),
+  },
+  {
+    method: "Improved-V4",
+    score: Number(result?.csaqf_improved_v4_score_percent || 0),
+  },
+];
 const [loading,setLoading]=useState(false);
 const [dashboard,setDashboard]=useState(null);
 const [activeSection, setActiveSection] = useState("dashboard");
@@ -635,51 +659,145 @@ onClick={handlePredict}
 
     <div className="imageCompare">
 
-        <div className="compareCard">
+    {/* ORIGINAL IMAGE — KEEPING YOUR EXISTING FEATURE */}
+    <div className="compareCard">
 
-            <div className="compareHeader">
-
-                🌿 {t.originalLeaf}
-
-            </div>
-
-            <img
-                src={preview}
-                className="compareImage"
-                alt="Original"
-            />
-
-            <p className="compareCaption">
-
-                {t.uploadedByUser}
-
-            </p>
-
+        <div className="compareHeader">
+            🌿 {t.originalLeaf}
         </div>
 
-        <div className="compareCard">
+        <img
+            src={preview}
+            className="compareImage"
+            alt="Original Leaf"
+        />
 
-            <div className="compareHeader">
-
-                🔥 {t.gradcamHeatmap}
-
-            </div>
-
-            <img
-                src={`data:image/png;base64,${result.gradcam}`}
-                className="compareImage"
-                alt="GradCAM"
-            />
-
-            <p className="compareCaption">
-
-                {t.aiFocusRegion}
-
-            </p>
-
-        </div>
+        <p className="compareCaption">
+            {t.uploadedByUser}
+        </p>
 
     </div>
+
+
+    {/* GRAD-CAM */}
+<div className="compareCard">
+
+    <div className="compareHeader">
+        🔥 {t.gradcamHeatmap}
+    </div>
+
+    {result.gradcam ? (
+        <img
+            src={`data:image/png;base64,${result.gradcam}`}
+            className="compareImage"
+            alt="Grad-CAM"
+        />
+    ) : (
+        <p className="compareCaption">
+            Grad-CAM unavailable
+        </p>
+    )}
+
+    <div className="confidenceSection camScoreSection">
+
+    <div className="confidenceHeader">
+
+        <span>
+             {t.gradcamScore}
+        </span>
+
+        <span>
+            {result.gradcam_score !== undefined &&
+            result.gradcam_score !== null
+                ? `${Number(result.gradcam_score).toFixed(2)}%`
+                : "N/A"}
+        </span>
+
+    </div>
+
+    <div className="progress">
+
+        <div
+            className="progressFill gradcamProgress"
+            style={{
+                width: `${
+                    result.gradcam_score !== undefined &&
+                    result.gradcam_score !== null
+                        ? result.gradcam_score
+                        : 0
+                }%`
+            }}
+        ></div>
+
+    </div>
+
+</div>
+
+    
+
+</div>
+
+
+    {/* SCORE-CAM */}
+<div className="compareCard">
+
+    <div className="compareHeader">
+        🎯 {t.scorecam}
+    </div>
+
+    {result.scorecam ? (
+        <img
+            src={`data:image/png;base64,${result.scorecam}`}
+            className="compareImage"
+            alt={t.scorecam}
+        />
+    ) : (
+        <p className="compareCaption">
+            {t.scorecamUnavailable}
+        </p>
+    )}
+
+    <div className="confidenceSection camScoreSection">
+
+    <div className="confidenceHeader">
+
+        <span>
+            {t.scorecamScore}
+        </span>
+
+        <span>
+            {result.scorecam_score !== undefined &&
+            result.scorecam_score !== null
+                ? `${Number(result.scorecam_score).toFixed(2)}%`
+                : "N/A"}
+        </span>
+
+    </div>
+
+    <div className="progress">
+
+        <div
+            className="progressFill scorecamProgress"
+            style={{
+                width: `${
+                    result.scorecam_score !== undefined &&
+                    result.scorecam_score !== null
+                        ? result.scorecam_score
+                        : 0
+                }%`
+            }}
+        ></div>
+
+    </div>
+
+</div>
+
+    {/* SCORE-CAM SCORE */}
+    
+
+</div>
+
+</div>
 
 </div>
 
@@ -694,7 +812,6 @@ onClick={handlePredict}
 <div className="severityCircle">
 
 {result.severity}%
-
 </div>
 
 <p>
@@ -707,6 +824,244 @@ onClick={handlePredict}
 
 </p>
 
+</div>
+{/* =========================================================
+    CSAQF RESULTS
+========================================================= */}
+
+<div className="csaqf-results">
+
+    {/* =====================================================
+        1. CSAQF
+    ===================================================== */}
+
+    <div className="severityCard modernCard csaqfMainCard">
+
+        <div className="csaqfCardHeader">
+            <div>
+                <span className="csaqfLabel">
+                    QUALITY FUSION
+                </span>
+
+                <h3>
+                    🧠 CSAQF
+                </h3>
+            </div>
+
+            <div className="csaqfScore">
+                {result.csaqf_score_percent !== undefined &&
+                 result.csaqf_score_percent !== null
+                    ? `${Number(
+                        result.csaqf_score_percent
+                      ).toFixed(2)}%`
+                    : "N/A"}
+            </div>
+        </div>
+
+        <div className="qualityBar">
+    <div
+        className="qualityBarFill"
+        style={{
+            width: `${
+                result.csaqf_score_percent !== undefined &&
+                result.csaqf_score_percent !== null
+                    ? Math.min(
+                        Math.max(
+                            Number(result.csaqf_score_percent),
+                            0
+                        ),
+                        100
+                    )
+                    : 0
+            }%`
+        }}
+    ></div>
+</div>
+
+        <p className="qualityDescription">
+            Original Confidence- and Severity-Adaptive
+            Quality Fusion
+        </p>
+
+    </div>
+
+
+    {/* =====================================================
+        2. CSAQF-V4
+    ===================================================== */}
+
+    <div className="severityCard modernCard csaqfV4MainCard">
+
+        <div className="csaqfCardHeader">
+            <div>
+                <span className="csaqfLabel">
+                    CALIBRATED FUSION
+                </span>
+
+                <h3>
+                    🚀 CSAQF-V4
+                </h3>
+            </div>
+
+            <div className="csaqfScore">
+                {result.csaqf_v4_score_percent !== undefined &&
+                 result.csaqf_v4_score_percent !== null
+                    ? `${Number(
+                        result.csaqf_v4_score_percent
+                      ).toFixed(2)}%`
+                    : "N/A"}
+            </div>
+        </div>
+
+        <div className="qualityBar">
+            <div
+                className="qualityBarFill"
+                style={{
+                    width: `${
+                        result.csaqf_v4_score_percent !== undefined &&
+                        result.csaqf_v4_score_percent !== null
+                            ? Math.min(
+                                Math.max(
+                                    Number(
+                                        result.csaqf_v4_score_percent
+                                    ),
+                                    0
+                                ),
+                                100
+                              )
+                            : 0
+                    }%`
+                }}
+            ></div>
+        </div>
+
+        <p className="qualityDescription">
+            5–95 percentile calibrated adaptive
+            quality fusion
+        </p>
+
+    </div>
+
+
+    {/* =====================================================
+        3. IMPROVED CSAQF-V4
+    ===================================================== */}
+
+    <div className="severityCard modernCard csaqfImprovedV4MainCard">
+
+        <div className="csaqfCardHeader">
+            <div>
+                <span className="csaqfLabel">
+                    LOGISTIC ADAPTIVE FUSION
+                </span>
+
+                <h3>⭐ Improved CSAQF-V4</h3>
+            </div>
+
+            <div className="csaqfScore">
+                {result.csaqf_improved_v4_score_percent !== undefined &&
+                 result.csaqf_improved_v4_score_percent !== null
+                    ? `${Number(result.csaqf_improved_v4_score_percent).toFixed(2)}%`
+                    : "N/A"}
+            </div>
+        </div>
+
+        <div className="qualityBar">
+            <div
+                className="qualityBarFill"
+                style={{
+                    width: `${
+                        result.csaqf_improved_v4_score_percent !== undefined &&
+                        result.csaqf_improved_v4_score_percent !== null
+                            ? Math.min(
+                                Math.max(
+                                    Number(result.csaqf_improved_v4_score_percent),
+                                    0
+                                ),
+                                100
+                              )
+                            : 0
+                    }%`
+                }}
+            ></div>
+        </div>
+
+        <p className="qualityDescription">
+            10–90 percentile calibrated logistic adaptive fusion
+            of Grad-CAM and Score-CAM
+        </p>
+
+        <div style={{
+            display: "flex",
+            justifyContent: "space-between",
+            marginTop: "15px",
+            gap: "15px"
+        }}>
+            <div>
+                <strong>Grad-CAM Weight</strong>
+                <br />
+                {result.csaqf_improved_v4_gqs_weight_percent !== undefined
+                    ? `${Number(result.csaqf_improved_v4_gqs_weight_percent).toFixed(2)}%`
+                    : "N/A"}
+            </div>
+
+            <div>
+                <strong>Score-CAM Weight</strong>
+                <br />
+                {result.csaqf_improved_v4_sqs_weight_percent !== undefined
+                    ? `${Number(result.csaqf_improved_v4_sqs_weight_percent).toFixed(2)}%`
+                    : "N/A"}
+            </div>
+        </div>
+
+    </div>
+
+
+    {/* =====================================================
+    3. CSAQF vs CSAQF-V4 - LINE GRAPH
+===================================================== */}
+
+<div className="severityCard modernCard csaqfComparisonCard">
+
+  <h3>CSAQF vs CSAQF-V4 vs Improved-V4</h3>
+
+  <ResponsiveContainer width="100%" height={300}>
+    <LineChart data={comparisonData}>
+
+      <CartesianGrid strokeDasharray="3 3" />
+
+      <XAxis
+        dataKey="method"
+      />
+
+      <YAxis
+        domain={[0, 100]}
+        tickFormatter={(value) => `${value}%`}
+      />
+
+      <Tooltip
+        formatter={(value) => [
+          `${Number(value).toFixed(2)}%`,
+          "Quality Score"
+        ]}
+      />
+
+      <Legend />
+
+      <Line
+        type="monotone"
+        dataKey="score"
+        name="Quality Score"
+        stroke="#7425eb"
+        strokeWidth={3}
+        dot={{ r: 7 }}
+        activeDot={{ r: 9 }}
+      />
+
+    </LineChart>
+  </ResponsiveContainer>
+
+</div>
 </div>
 
 </>

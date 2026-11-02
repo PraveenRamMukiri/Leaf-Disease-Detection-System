@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import axios from "axios";
 import { useLanguage } from "../context/LanguageContext";
 import { getLocalizedDiseaseDetails, getLocalizedPlantName } from "../utils/translateDisease";
@@ -8,6 +8,7 @@ const API = import.meta.env.VITE_BACKEND_URL;
 export default function History() {
   const { t, language } = useLanguage();
   const [history, setHistory] = useState([]);
+  const [stats, setStats] = useState(null);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
@@ -27,17 +28,23 @@ export default function History() {
       });
 
       setHistory(res.data);
+      const statsRes = await axios.get(`${API}/api/dashboard`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setStats(statsRes.data);
     } catch (err) {
       console.log(err);
     }
   };
 
   useEffect(() => {
-    loadHistory();
-
+    const initialLoad = setTimeout(loadHistory, 0);
     const timer = setInterval(loadHistory, 3000);
 
-    return () => clearInterval(timer);
+    return () => {
+      clearTimeout(initialLoad);
+      clearInterval(timer);
+    };
   }, []);
 
   const getDisplayDisease = (item) => {
@@ -133,11 +140,7 @@ export default function History() {
   const startIndex = (safePage - 1) * pageSize;
   const pageItems = filtered.slice(startIndex, startIndex + pageSize);
 
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [search, filter]);
-
-  return (
+    return (
     <div className="historyWrapper">
 
 {/* ================= Banner ================= */}
@@ -180,7 +183,7 @@ export default function History() {
 
 <div>
 
-<h2>{history.length}</h2>
+<h2>{stats?.total ?? history.length}</h2>
 
 <p>{t.totalPredictions}</p>
 
@@ -198,7 +201,7 @@ export default function History() {
 
 <h2>
 {
-history.filter(
+stats?.healthy ?? history.filter(
 item=>item.status==="Healthy"
 ).length
 }
@@ -220,7 +223,7 @@ item=>item.status==="Healthy"
 
 <h2>
 {
-history.filter(
+stats?.diseased ?? history.filter(
 item=>item.status==="Diseased"
 ).length
 }
@@ -242,18 +245,9 @@ item=>item.status==="Diseased"
 
 <h2>
 
-{
-history.length
-?
-(
-history.reduce(
-(a,b)=>a+b.confidence,
-0
-)/history.length
-).toFixed(1)
-:
-0
-}%
+{stats?.accuracy ?? (history.length
+  ? (history.reduce((a, b) => a + b.confidence, 0) / history.length).toFixed(1)
+  : 0)}%
 
 </h2>
 
@@ -277,7 +271,10 @@ history.reduce(
 type="text"
 placeholder={t.searchPlaceholder}
 value={search}
-onChange={(e)=>setSearch(e.target.value)}
+onChange={(e)=>{
+  setSearch(e.target.value);
+  setCurrentPage(1);
+}}
 />
 
 </div>
@@ -285,7 +282,10 @@ onChange={(e)=>setSearch(e.target.value)}
 <select
 className="toolbarSelect"
 value={filter}
-onChange={(e)=>setFilter(e.target.value)}
+onChange={(e)=>{
+  setFilter(e.target.value);
+  setCurrentPage(1);
+}}
 >
 
 <option value="all">
@@ -322,6 +322,8 @@ onChange={(e)=>setFilter(e.target.value)}
         <thead>
           <tr>
 
+<th>{t.leafSample}</th>
+
 <th>🌾 {t.plant}</th>
 
 <th>🦠 {t.disease}</th>
@@ -344,6 +346,21 @@ onChange={(e)=>setFilter(e.target.value)}
 {pageItems.map((item)=>(
 
 <tr key={item.id}>
+
+<td>
+  {item.leaf_image ? (
+    <img
+      className="historyLeafThumbnail"
+      src={item.leaf_image}
+      alt={getDisplayPlant(item) + " " + getDisplayDisease(item)}
+    />
+  ) : (
+    <div className="historyLeafUnavailable" title={t.savedLeafImageUnavailable}>
+      <span aria-hidden="true">🍃</span>
+      <small>{t.savedLeafImageUnavailable}</small>
+    </div>
+  )}
+</td>
 
 <td>
 

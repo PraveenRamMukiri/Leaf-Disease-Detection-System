@@ -129,7 +129,7 @@ supportedFormats:"Supports JPG, PNG and JPEG formats",
 orClicktoBrowse:"or click to browse files",
 
 aiPredictionDescription:
-"Upload a healthy or diseased leaf image to receive AI-powered prediction, Grad-CAM visualization, severity analysis and treatment recommendations.",
+"Upload a healthy or diseased leaf image to receive AI-powered prediction, Grad-CAM and Score-CAM visualization, severity analysis and treatment recommendations.",
 
 uploadLeafImageTitle:
   "Upload Leaf Image",
@@ -160,6 +160,15 @@ gradcamHeatmap:
 
 aiFocusRegion:
   "AI Focus Region",
+
+scorecam:
+"Score-CAM",
+
+scorecamDescription:
+"AI feature importance visualization",
+
+scorecamUnavailable:
+"Score-CAM unavailable",
 
 diseaseSeverity:
   "Disease Severity",
@@ -211,6 +220,8 @@ dateColumn: "Date",
 actionColumn: "Action",
 
 leafSample: "Leaf Sample",
+savedLeafImageUnavailable: "Image wasn't saved for this older detection.",
+recentDetections: "Recent Detections",
 
 healthyStatus: "Healthy",
 diseasedStatus: "Diseased",
@@ -219,7 +230,11 @@ view: "View",
 pdf: "PDF",
 
 today: "Today",
+gradcamScore: "Grad-CAM Score",
+scorecamScore: "Score-CAM Score",
 
 };
+
+
 
 export default en;

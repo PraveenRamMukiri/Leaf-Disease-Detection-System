@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import axios from "axios";
 import { useLanguage } from "../context/LanguageContext";
 import { getLocalizedPlantName } from "../utils/translateDisease";
@@ -33,12 +33,9 @@ export default function Analytics() {
   const { t, language } = useLanguage();
 
   const [history, setHistory] = useState([]);
+  const [stats, setStats] = useState(null);
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
+  async function loadData() {
     try {
       const token = localStorage.getItem("token");
 
@@ -49,31 +46,40 @@ export default function Analytics() {
       });
 
       setHistory(res.data);
+      const statsRes = await axios.get(`${API}/api/dashboard`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setStats(statsRes.data);
 
     } catch (err) {
       console.log(err);
     }
-  };
+  }
 
-  const healthy = history.filter(
+  useEffect(() => {
+    const initialLoad = setTimeout(loadData, 0);
+    return () => clearTimeout(initialLoad);
+  }, []);
+
+  const healthy = stats?.healthy ?? history.filter(
     (h) => h.status === "Healthy"
   ).length;
 
-  const diseased = history.filter(
+  const diseased = stats?.diseased ?? history.filter(
     (h) => h.status === "Diseased"
   ).length;
 
-  const total = history.length;
+  const total = stats?.total ?? history.length;
 
   const accuracy =
-    total === 0
+    stats?.accuracy ?? (history.length === 0
       ? 0
       : (
           history.reduce(
             (sum, h) => sum + h.confidence,
             0
           ) / total
-        ).toFixed(1);
+        ).toFixed(1));
 
   const pieData = {
     labels: [t.healthy, t.diseased],
@@ -257,6 +263,34 @@ display: false,
 </div>
 
 </div>
+
+{history.length > 0 && (
+  <section className="analyticsRecent">
+    <h2>{t.recentDetections}</h2>
+    <div className="analyticsRecentGrid">
+      {history.slice(0, 6).map((detection) => (
+        <article className="analyticsRecentCard" key={detection.id}>
+          {detection.leaf_image ? (
+            <img
+              src={detection.leaf_image}
+              alt={`${getLocalizedPlantName(detection.plant, language)} ${detection.disease}`}
+            />
+          ) : (
+            <div className="analyticsLeafUnavailable" title={t.savedLeafImageUnavailable} aria-label={t.savedLeafImageUnavailable}>
+              <span aria-hidden="true">🍃</span>
+            </div>
+          )}
+          <div>
+            <h3>{getLocalizedPlantName(detection.plant, language)}</h3>
+            <p>{detection.disease.replace(/_/g, " ")}</p>
+            <span>{detection.confidence.toFixed(2)}%</span>
+            {!detection.leaf_image && <small>{t.savedLeafImageUnavailable}</small>}
+          </div>
+        </article>
+      ))}
+    </div>
+  </section>
+)}
 
 </div>
 

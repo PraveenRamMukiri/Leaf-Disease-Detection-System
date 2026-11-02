@@ -132,7 +132,7 @@ supportedFormats:"JPG, PNG మరియు JPEG ఫార్మాట్లు �
 orClicktoBrowse:"లేదా ఫైల్ ఎంచుకోవడానికి క్లిక్ చేయండి",
 
 aiPredictionDescription:
-"ఆరోగ్యకరమైన లేదా వ్యాధిగ్రస్తమైన ఆకు చిత్రాన్ని అప్లోడ్ చేసి AI అంచనా, Grad-CAM విజువలైజేషన్, తీవ్రత విశ్లేషణ మరియు చికిత్స సూచనలు పొందండి.",
+"ఆరోగ్యకరమైన లేదా వ్యాధిగ్రస్తమైన ఆకు చిత్రాన్ని అప్లోడ్ చేసి AI అంచనా, Grad-CAM మరియు Score-CAM విజువలైజేషన్, తీవ్రత విశ్లేషణ మరియు చికిత్స సూచనలు పొందండి.",
 
 uploadLeafImageTitle:
 "ఆకు చిత్రాన్ని అప్లోడ్ చేయండి",
@@ -163,6 +163,15 @@ gradcamHeatmap:
 
 aiFocusRegion:
 "ఏఐ గుర్తించిన ప్రాంతం",
+
+scorecam:
+"స్కోర్-CAM",
+
+scorecamDescription:
+"AI ఫీచర్ ప్రాముఖ్యత విజువలైజేషన్",
+
+scorecamUnavailable:
+"Score-CAM అందుబాటులో లేదు",
 
 diseaseSeverity:
 "వ్యాధి తీవ్రత",
@@ -212,6 +221,8 @@ diseasedLeaves: "వ్యాధిగ్రస్త ఆకులు",
 averageAccuracy: "సగటు ఖచ్చితత్వం",
 
 leafSample: "ఆకు నమూనా",
+savedLeafImageUnavailable: "ఈ పాత గుర్తింపుతో చిత్రం భద్రపరచబడలేదు.",
+recentDetections: "ఇటీవలి గుర్తింపులు",
 
 view: "చూడండి",
 
@@ -230,8 +241,15 @@ noHistory: "అంచనాల చరిత్ర అందుబాటులో
 plantWise: "మొక్కల వారీగా",
 
 predictionHistoryDescription:
-"AI మోడల్ రూపొందించిన అన్ని గత అంచనాలను సమీక్షించండి."
+"AI మోడల్ రూపొందించిన అన్ని గత అంచనాలను సమీక్షించండి.",
+
+gradcamScore: "గ్రాడ్-క్యామ్ స్కోర్",
+scorecamScore: "స్కోర్-క్యామ్ స్కోర్",
+
+
 
 };
+
+
 
 export default te;

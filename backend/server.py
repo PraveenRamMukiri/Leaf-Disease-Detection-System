@@ -22,10 +22,11 @@ from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime, timezone
 import io
+import base64
 import cv2
 import numpy as np
 from PIL import Image
-from gradcam import generate_gradcam
+from gradcam import generate_gradcam, generate_scorecam
 from disease_info import DISEASE_INFO
 from fastapi.responses import FileResponse
 from reportlab.platypus import SimpleDocTemplate, Paragraph
@@ -158,6 +159,7 @@ class Detection(BaseModel):
     cause: str
     symptoms: List[str]
     treatment: List[str]
+    leaf_image: Optional[str] = None
     created_at: str
 
 
@@ -639,6 +641,622 @@ class_names = [
     "papaya_diseased_spots"
 ]
 
+def calculate_cam_score(heatmap):
+    """
+    Calculate explanation strength from a normalized CAM heatmap.
+    Returns a percentage score between 0 and 100.
+    """
+
+    heatmap = np.array(heatmap, dtype=np.float32)
+
+    if heatmap.size == 0:
+        return 0.0
+
+    max_value = np.max(heatmap)
+
+    if max_value > 0:
+        heatmap = heatmap / max_value
+
+    score = np.mean(heatmap) * 100
+
+    return round(float(score), 2)
+
+# ============================================================
+# CSAQF - Confidence- and Severity-Adaptive Quality Fusion
+# ============================================================
+
+CSAQF_ETA = 0.1
+
+
+def calculate_csaqf(
+    confidence,
+    severity,
+    gqs,
+    sqs
+):
+    """
+    Calculate the Confidence- and Severity-Adaptive
+    Quality Fusion score.
+
+    Inputs:
+        confidence : percentage (0-100)
+        severity   : percentage (0-100)
+        gqs        : Grad-CAM quality score (0-100)
+        sqs        : Score-CAM quality score (0-100)
+
+    Internal calculations use normalized [0,1] values.
+    """
+
+    # --------------------------------------------------------
+    # Normalize all percentage values
+    # --------------------------------------------------------
+
+    C = float(confidence) / 100.0
+    S = float(severity) / 100.0
+    GQS = float(gqs) / 100.0
+    SQS = float(sqs) / 100.0
+
+    # --------------------------------------------------------
+    # Adaptive fusion coefficient
+    #
+    # lambda = C / (C + eta*S)
+    # --------------------------------------------------------
+
+    denominator = C + CSAQF_ETA * S
+
+    if denominator == 0:
+        lam = 0.0
+    else:
+        lam = C / denominator
+
+    # --------------------------------------------------------
+    # Primary Evidence Score
+    #
+    # PES = lambda*GQS + (1-lambda)*SQS
+    # --------------------------------------------------------
+
+    PES = (
+        lam * GQS +
+        (1.0 - lam) * SQS
+    )
+
+    # --------------------------------------------------------
+    # Adaptive weights
+    # --------------------------------------------------------
+
+    total = C + S + PES
+
+    if total == 0:
+        alpha = 0.0
+        beta = 0.0
+        gamma = 0.0
+    else:
+        alpha = C / total
+        beta = S / total
+        gamma = PES / total
+
+    # --------------------------------------------------------
+    # Overall Adaptive Quality Score
+    #
+    # PI = alpha*C + beta*S + gamma*PES
+    # --------------------------------------------------------
+
+    overall_score = (
+        alpha * C +
+        beta * S +
+        gamma * PES
+    )
+
+    return {
+        "lambda": round(lam, 6),
+        "PES": round(PES, 6),
+        "alpha": round(alpha, 6),
+        "beta": round(beta, 6),
+        "gamma": round(gamma, 6),
+        "overall_score": round(
+            overall_score,
+            6
+        ),
+        "overall_score_percent": round(
+            overall_score * 100,
+            2
+        )
+    }
+
+# ============================================================
+# CSAQF-V4 - Calibrated Adaptive Quality Fusion
+# ============================================================
+
+# Percentile calibration constants obtained from the
+# 4,176-image calibration experiment.
+
+CSAQF_V4_G5 = 17.4300
+CSAQF_V4_G95 = 32.2575
+
+CSAQF_V4_S5 = 59.1200
+CSAQF_V4_S95 = 70.6725
+
+
+def _csaqf_v4_calibrate(
+    value,
+    low,
+    high
+):
+    """
+    5-95 percentile calibration.
+
+    Maps the raw CAM score to [0,1].
+    """
+
+    if high <= low:
+        return 0.5
+
+    calibrated = (
+        (float(value) - low) /
+        (high - low)
+    )
+
+    return max(
+        0.0,
+        min(
+            calibrated,
+            1.0
+        )
+    )
+
+
+def calculate_csaqf_v4(
+    confidence,
+    severity,
+    gqs,
+    sqs
+):
+    """
+    CSAQF-V4 calibrated adaptive fusion.
+
+    Inputs:
+        confidence : percentage 0-100
+        severity   : percentage 0-100
+        gqs        : Grad-CAM quality score 0-100
+        sqs        : Score-CAM quality score 0-100
+
+    Returns:
+        calibrated CAM scores,
+        adaptive weights,
+        calibrated fusion,
+        final V4 quality score.
+    """
+
+    # --------------------------------------------------------
+    # Normalize confidence and severity
+    # --------------------------------------------------------
+
+    C = float(confidence) / 100.0
+    S = float(severity) / 100.0
+
+    # Keep CAM scores in their original 0-100 scale here.
+    raw_gqs = float(gqs)
+    raw_sqs = float(sqs)
+
+    # --------------------------------------------------------
+    # 5-95 percentile calibration
+    # --------------------------------------------------------
+
+    gqs_cal = _csaqf_v4_calibrate(
+        raw_gqs,
+        CSAQF_V4_G5,
+        CSAQF_V4_G95
+    )
+
+    sqs_cal = _csaqf_v4_calibrate(
+        raw_sqs,
+        CSAQF_V4_S5,
+        CSAQF_V4_S95
+    )
+
+    # --------------------------------------------------------
+    # Normalized confidence / severity
+    # --------------------------------------------------------
+
+    context_total = C + S
+
+    if context_total <= 0:
+
+        Cn = 0.5
+        Sn = 0.5
+
+    else:
+
+        Cn = C / context_total
+        Sn = S / context_total
+
+    # --------------------------------------------------------
+    # Calibrated CAM relative quality
+    # --------------------------------------------------------
+
+    cam_total = (
+        gqs_cal +
+        sqs_cal
+    )
+
+    if cam_total <= 0:
+
+        RG = 0.5
+        RS = 0.5
+
+    else:
+
+        RG = (
+            gqs_cal /
+            cam_total
+        )
+
+        RS = (
+            sqs_cal /
+            cam_total
+        )
+
+    # --------------------------------------------------------
+    # V4 raw adaptive weights
+    # --------------------------------------------------------
+
+    raw_G = (
+        RG *
+        Cn *
+        (1.0 - Sn)
+    )
+
+    raw_S = (
+        RS *
+        (1.0 + Sn)
+    )
+
+    weight_total = (
+        raw_G +
+        raw_S
+    )
+
+    if weight_total <= 0:
+
+        WG = 0.5
+        WS = 0.5
+
+    else:
+
+        WG = (
+            raw_G /
+            weight_total
+        )
+
+        WS = (
+            raw_S /
+            weight_total
+        )
+
+    # --------------------------------------------------------
+    # CSAQF-V4 calibrated adaptive fusion
+    # --------------------------------------------------------
+
+    fusion_calibrated = (
+        WG * gqs_cal +
+        WS * sqs_cal
+    )
+
+    # --------------------------------------------------------
+    # Overall quality score
+    # --------------------------------------------------------
+
+    total = (
+        C +
+        S +
+        fusion_calibrated
+    )
+
+    if total <= 0:
+
+        alpha = 0.0
+        beta = 0.0
+        gamma = 0.0
+        overall_score = 0.0
+
+    else:
+
+        alpha = C / total
+        beta = S / total
+        gamma = fusion_calibrated / total
+
+        overall_score = (
+            alpha * C +
+            beta * S +
+            gamma * fusion_calibrated
+        )
+
+    return {
+        "gqs_calibrated": round(
+            gqs_cal,
+            6
+        ),
+
+        "sqs_calibrated": round(
+            sqs_cal,
+            6
+        ),
+
+        "confidence_normalized": round(
+            Cn,
+            6
+        ),
+
+        "severity_normalized": round(
+            Sn,
+            6
+        ),
+
+        "gqs_relative": round(
+            RG,
+            6
+        ),
+
+        "sqs_relative": round(
+            RS,
+            6
+        ),
+
+        "gqs_weight": round(
+            WG,
+            6
+        ),
+
+        "sqs_weight": round(
+            WS,
+            6
+        ),
+
+        "fusion": round(
+            fusion_calibrated,
+            6
+        ),
+
+        "alpha": round(
+            alpha,
+            6
+        ),
+
+        "beta": round(
+            beta,
+            6
+        ),
+
+        "gamma": round(
+            gamma,
+            6
+        ),
+
+        "overall_score": round(
+            overall_score,
+            6
+        ),
+
+        "overall_score_percent": round(
+            overall_score * 100,
+            2
+        )
+    }
+
+
+# ============================================================
+# CSAQF-IMPROVED-V4
+# Frozen exploratory candidate from the 4,176-image search.
+#
+# Calibration: P10-P90
+# Logistic temperature: T = 0.25
+# Additional confidence/severity terms: disabled
+#
+# NOTE:
+# 81.6265% was an exploratory result on the same 4,176-image
+# dataset. Validate on held-out/independent data before making
+# a final superiority claim.
+# ============================================================
+
+CSAQF_IMPROVED_V4_T = 0.25
+_CSAQF_IMPROVED_V4_CALIBRATION = None
+
+
+def _load_improved_v4_calibration():
+    global _CSAQF_IMPROVED_V4_CALIBRATION
+
+    if _CSAQF_IMPROVED_V4_CALIBRATION is not None:
+        return _CSAQF_IMPROVED_V4_CALIBRATION
+
+    import csv
+
+    csv_path = ROOT_DIR / "eta_experiment_results.csv"
+
+    gqs_values = []
+    sqs_values = []
+
+    if csv_path.exists():
+        try:
+            with open(csv_path, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+
+                for row in reader:
+                    try:
+                        if abs(float(row["eta"]) - 0.1) > 1e-9:
+                            continue
+
+                        gqs_values.append(float(row["GQS_percent"]))
+                        sqs_values.append(float(row["SQS_percent"]))
+
+                    except (ValueError, KeyError):
+                        continue
+
+        except Exception as e:
+            logger.warning(
+                f"Improved-V4 calibration CSV error: {e}"
+            )
+
+    if len(gqs_values) >= 10 and len(sqs_values) >= 10:
+        calibration = {
+            "g_low": float(np.percentile(gqs_values, 10)),
+            "g_high": float(np.percentile(gqs_values, 90)),
+            "s_low": float(np.percentile(sqs_values, 10)),
+            "s_high": float(np.percentile(sqs_values, 90)),
+            "percentiles": "10-90"
+        }
+
+    else:
+        # Functional fallback if eta_experiment_results.csv is not
+        # present. The established V4 constants are used only as a
+        # compatibility fallback.
+        logger.warning(
+            "eta_experiment_results.csv unavailable. "
+            "Improved-V4 is using V4 calibration fallback."
+        )
+
+        calibration = {
+            "g_low": CSAQF_V4_G5,
+            "g_high": CSAQF_V4_G95,
+            "s_low": CSAQF_V4_S5,
+            "s_high": CSAQF_V4_S95,
+            "percentiles": "5-95 fallback"
+        }
+
+    _CSAQF_IMPROVED_V4_CALIBRATION = calibration
+
+    logger.info(
+        "CSAQF-Improved-V4 calibration: "
+        f"GQS {calibration['g_low']:.4f}-{calibration['g_high']:.4f}, "
+        f"SQS {calibration['s_low']:.4f}-{calibration['s_high']:.4f}, "
+        f"{calibration['percentiles']}"
+    )
+
+    return calibration
+
+
+def _improved_v4_calibrate(value, low, high):
+    if high <= low:
+        return 0.5
+
+    value = (float(value) - low) / (high - low)
+
+    return max(
+        0.0,
+        min(value, 1.0)
+    )
+
+
+def calculate_csaqf_improved_v4(
+    confidence,
+    severity,
+    gqs,
+    sqs
+):
+    """
+    CSAQF-Improved-V4 logistic adaptive fusion.
+
+    The calibrated difference GQS-SQS controls a logistic gate:
+
+        wG = sigmoid((GQS_cal - SQS_cal) / T)
+        wS = 1 - wG
+
+    Frozen candidate:
+        T = 0.25
+        calibration = P10-P90
+    """
+
+    calibration = _load_improved_v4_calibration()
+
+    C = float(confidence) / 100.0
+    S = float(severity) / 100.0
+
+    gqs_cal = _improved_v4_calibrate(
+        gqs,
+        calibration["g_low"],
+        calibration["g_high"]
+    )
+
+    sqs_cal = _improved_v4_calibrate(
+        sqs,
+        calibration["s_low"],
+        calibration["s_high"]
+    )
+
+    # Logistic adaptive gate.
+    difference = gqs_cal - sqs_cal
+    z = float(
+        np.clip(
+            difference / CSAQF_IMPROVED_V4_T,
+            -50.0,
+            50.0
+        )
+    )
+
+    gqs_weight = 1.0 / (1.0 + np.exp(-z))
+    sqs_weight = 1.0 - gqs_weight
+
+    # Adaptive fusion.
+    fusion = (
+        gqs_weight * gqs_cal +
+        sqs_weight * sqs_cal
+    )
+
+    # Same OAQS structure as the current V4.
+    total = C + S + fusion
+
+    if total <= 0:
+        alpha = 0.0
+        beta = 0.0
+        gamma = 0.0
+        overall_score = 0.0
+    else:
+        alpha = C / total
+        beta = S / total
+        gamma = fusion / total
+
+        overall_score = (
+            alpha * C +
+            beta * S +
+            gamma * fusion
+        )
+
+    return {
+        "gqs_calibrated": round(gqs_cal, 6),
+        "sqs_calibrated": round(sqs_cal, 6),
+
+        "gqs_weight": round(gqs_weight, 6),
+        "sqs_weight": round(sqs_weight, 6),
+
+        "gqs_weight_percent": round(
+            gqs_weight * 100.0,
+            2
+        ),
+        "sqs_weight_percent": round(
+            sqs_weight * 100.0,
+            2
+        ),
+
+        "temperature": CSAQF_IMPROVED_V4_T,
+
+        "fusion": round(fusion, 6),
+        "PES": round(fusion, 6),
+
+        "alpha": round(alpha, 6),
+        "beta": round(beta, 6),
+        "gamma": round(gamma, 6),
+
+        "overall_score": round(
+            overall_score,
+            6
+        ),
+
+        "overall_score_percent": round(
+            overall_score * 100.0,
+            2
+        )
+    }
+
+
 @api_router.post("/inference")
 async def detect_disease(
     file: UploadFile = File(...),
@@ -647,8 +1265,16 @@ async def detect_disease(
     user = await get_current_user(credentials)
     try:
         # Read image
-        image = Image.open(file.file).convert("RGB")
-        image = image.resize((224, 224))
+        uploaded_image = Image.open(file.file).convert("RGB")
+        thumbnail = uploaded_image.copy()
+        thumbnail.thumbnail((512, 512))
+        thumbnail_buffer = io.BytesIO()
+        thumbnail.save(thumbnail_buffer, format="JPEG", quality=80, optimize=True)
+        leaf_image = "data:image/jpeg;base64," + base64.b64encode(
+            thumbnail_buffer.getvalue()
+        ).decode("ascii")
+
+        image = uploaded_image.resize((224, 224))
 
         img_array = np.array(image) / 255.0
         original_np = np.array(image)
@@ -681,14 +1307,92 @@ async def detect_disease(
         })
 
         # Generate GradCAM
-        heatmap = generate_gradcam(model, img_array)
-        overlay = overlay_heatmap(heatmap, original_np)
+        gradcam_heatmap = generate_gradcam(
+            model,
+            img_array
+        )
+        gradcam_score = calculate_cam_score(
+            gradcam_heatmap
+        )
+        gradcam_overlay = overlay_heatmap(
+            gradcam_heatmap,
+            original_np
+        )
 
-        _, buffer = cv2.imencode(".png", overlay)
+        _, gradcam_buffer = cv2.imencode(".png", gradcam_overlay)
 
-        import base64
-        gradcam_base64 = base64.b64encode(buffer).decode("utf-8")
+        gradcam_base64 = base64.b64encode(gradcam_buffer).decode("utf-8")
 
+        # ============================================================
+        # REAL SCORE-CAM
+        # ============================================================
+        # Generate REAL Score-CAM
+        try:
+            scorecam_heatmap = generate_scorecam(
+                model,
+                img_array,
+                max_channels=32
+            )
+
+            scorecam_score = calculate_cam_score(
+                scorecam_heatmap
+            )
+
+            
+            scorecam_overlay = overlay_heatmap(
+                scorecam_heatmap,
+                original_np
+            )
+
+            _, scorecam_buffer = cv2.imencode(
+                ".png",
+                scorecam_overlay
+            )
+
+            scorecam_base64 = base64.b64encode(
+                scorecam_buffer
+            ).decode("utf-8")
+
+        except Exception as scorecam_error:
+           logger.error(
+               f"Score-CAM failed: {scorecam_error}",
+               exc_info=True
+               )
+           scorecam_base64 = None
+           scorecam_score = 0.0
+
+        # ============================================================
+        # CSAQF CALCULATION
+        # ============================================================
+
+        csaqf_result = calculate_csaqf(
+            confidence=confidence,
+            severity=severity,
+            gqs=gradcam_score,
+            sqs=scorecam_score
+        )
+        # ========================================================
+        # CSAQF-V4 CALCULATION
+        # ========================================================
+
+        csaqf_v4_result = calculate_csaqf_v4(
+            confidence=confidence,
+            severity=severity,
+            gqs=gradcam_score,
+            sqs=scorecam_score
+        )
+
+        # ========================================================
+        # CSAQF-IMPROVED-V4 CALCULATION
+        # ========================================================
+
+        csaqf_improved_v4_result = calculate_csaqf_improved_v4(
+            confidence=confidence,
+            severity=severity,
+            gqs=gradcam_score,
+            sqs=scorecam_score
+        )
+        
         # ==========================
         # SAVE TO MONGODB
         # ==========================
@@ -697,16 +1401,119 @@ async def detect_disease(
             "user_email": user["email"],
             "id": str(uuid.uuid4()),
             "plant": info["plant"],
+            "class": predicted_name,
             "disease": predicted_name,
             "status": info["status"],
+
+            # Prediction
             "confidence": round(confidence, 2),
+
+            # Severity
             "severity": severity,
+
+            # Disease information
             "cause": info["cause"],
             "symptoms": info["symptoms"],
             "treatment": info["treatment"],
+            "leaf_image": leaf_image,
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "is_deleted": False
-            
+            "is_deleted": False,
+
+            # Grad-CAM
+            "gradcam": gradcam_base64,
+            "gradcam_score": gradcam_score,
+
+            # Score-CAM
+            "scorecam": scorecam_base64,
+            "scorecam_score": scorecam_score,
+
+            # ========================================================
+            # CSAQF
+            # ========================================================
+
+            "csaqf_eta": CSAQF_ETA,
+
+            "csaqf_lambda":
+                csaqf_result["lambda"],
+
+            "csaqf_pes":
+                csaqf_result["PES"],
+
+            "csaqf_alpha":
+                csaqf_result["alpha"],
+
+            "csaqf_beta":
+                csaqf_result["beta"],
+
+            "csaqf_gamma":
+                csaqf_result["gamma"],
+
+            "csaqf_score":
+                csaqf_result["overall_score"],
+
+            "csaqf_score_percent":
+                csaqf_result["overall_score_percent"],
+        
+
+        # --------------------------------------------------------
+        # CSAQF-V4
+        # --------------------------------------------------------
+
+        "csaqf_v4_gqs_calibrated":
+            csaqf_v4_result["gqs_calibrated"],
+
+        "csaqf_v4_sqs_calibrated":
+            csaqf_v4_result["sqs_calibrated"],
+
+        "csaqf_v4_gqs_weight":
+            csaqf_v4_result["gqs_weight"],
+
+        "csaqf_v4_sqs_weight":
+            csaqf_v4_result["sqs_weight"],
+
+        "csaqf_v4_fusion":
+            csaqf_v4_result["fusion"],
+
+        "csaqf_v4_score":
+            csaqf_v4_result["overall_score"],
+
+        "csaqf_v4_score_percent":
+            csaqf_v4_result["overall_score_percent"],
+
+        # ========================================================
+        # CSAQF-IMPROVED-V4
+        # ========================================================
+
+        "csaqf_improved_v4_score":
+            csaqf_improved_v4_result["overall_score"],
+
+        "csaqf_improved_v4_score_percent":
+            csaqf_improved_v4_result["overall_score_percent"],
+
+        "csaqf_improved_v4_gqs_calibrated":
+            csaqf_improved_v4_result["gqs_calibrated"],
+
+        "csaqf_improved_v4_sqs_calibrated":
+            csaqf_improved_v4_result["sqs_calibrated"],
+
+        "csaqf_improved_v4_gqs_weight":
+            csaqf_improved_v4_result["gqs_weight"],
+
+        "csaqf_improved_v4_sqs_weight":
+            csaqf_improved_v4_result["sqs_weight"],
+
+        "csaqf_improved_v4_gqs_weight_percent":
+            csaqf_improved_v4_result["gqs_weight_percent"],
+
+        "csaqf_improved_v4_sqs_weight_percent":
+            csaqf_improved_v4_result["sqs_weight_percent"],
+
+        "csaqf_improved_v4_fusion":
+            csaqf_improved_v4_result["fusion"],
+
+        "csaqf_improved_v4_temperature":
+            csaqf_improved_v4_result["temperature"]
+
         }
 
         await db.detections.insert_one(prediction_doc)
@@ -724,8 +1531,55 @@ async def detect_disease(
             "cause": info["cause"],
             "symptoms": info["symptoms"],
             "treatment": info["treatment"],
-            "gradcam": gradcam_base64
-        }
+
+            # Grad-CAM
+            "gradcam": gradcam_base64,
+            "gradcam_score": gradcam_score,
+
+            # Score-CAM
+            "scorecam": scorecam_base64,
+            "scorecam_score": scorecam_score,
+
+            # ========================================================
+            # ORIGINAL CSAQF
+            # ========================================================
+
+            "csaqf_score": csaqf_result["overall_score"],
+            "csaqf_score_percent": csaqf_result["overall_score_percent"],
+
+            # ========================================================
+            # CSAQF-V4
+            # ========================================================
+
+            
+            "csaqf_v4_score":
+                csaqf_v4_result["overall_score"],
+
+            "csaqf_v4_score_percent":
+                csaqf_v4_result["overall_score_percent"],
+
+            # ========================================================
+            # CSAQF-IMPROVED-V4
+            # ========================================================
+
+            "csaqf_improved_v4_score":
+                csaqf_improved_v4_result["overall_score"],
+
+            "csaqf_improved_v4_score_percent":
+                csaqf_improved_v4_result["overall_score_percent"],
+
+            "csaqf_improved_v4_gqs_weight_percent":
+                csaqf_improved_v4_result["gqs_weight_percent"],
+
+            "csaqf_improved_v4_sqs_weight_percent":
+                csaqf_improved_v4_result["sqs_weight_percent"],
+
+            "csaqf_improved_v4_fusion":
+                csaqf_improved_v4_result["fusion"],
+
+            "csaqf_improved_v4_temperature":
+                csaqf_improved_v4_result["temperature"]
+    }
 
     except Exception as e:
         logger.error(str(e))
@@ -742,15 +1596,18 @@ async def list_detections(
     user = await get_current_user(credentials)
 
     detections = await db.detections.find(
-       {"user_email": user["email"]},
-       {"_id":0}
+       {"user_email": user["email"], "is_deleted": {"$ne": True}},
+       {"_id": 0, "gradcam": 0, "scorecam": 0}
     ).sort("created_at",-1).to_list(100)
 
     return detections
 
 @api_router.get("/detections/{detection_id}", response_model=Detection)
 async def get_detection(detection_id: str):
-    detection = await db.detections.find_one({"id": detection_id, "is_deleted": False}, {"_id": 0})
+    detection = await db.detections.find_one(
+        {"id": detection_id, "is_deleted": {"$ne": True}},
+        {"_id": 0}
+    )
     if not detection:
         raise HTTPException(status_code=404, detail="Detection not found")
     return detection
@@ -791,29 +1648,28 @@ async def dashboard(
 
     user = await get_current_user(credentials)
 
-    total = await db.detections.count_documents(
-        {"user_email": user["email"]}
-    )
+    detection_filter = {
+        "user_email": user["email"],
+        "is_deleted": {"$ne": True},
+    }
+
+    total = await db.detections.count_documents(detection_filter)
 
     healthy = await db.detections.count_documents({
-        "user_email": user["email"],
+        **detection_filter,
         "status":"Healthy"
     })
 
     diseased = await db.detections.count_documents({
-        "user_email": user["email"],
+        **detection_filter,
         "status":"Diseased"
     })
 
-    accuracy = 90.0
-
-    if total > 0:
-        docs = await db.detections.find({"user_email": user["email"]},{"confidence":1}).to_list(1000)
-
-        accuracy = round(
-            sum(d["confidence"] for d in docs)/len(docs),
-            2
-        )
+    confidence_stats = await db.detections.aggregate([
+        {"$match": detection_filter},
+        {"$group": {"_id": None, "average": {"$avg": "$confidence"}}}
+    ]).to_list(1)
+    accuracy = round(confidence_stats[0]["average"], 2) if confidence_stats else 0.0
 
     return{
         "total":total,

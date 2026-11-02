@@ -132,7 +132,7 @@ supportedFormats:"JPG, PNG और JPEG प्रारूप समर्थि�
 orClicktoBrowse:"या फ़ाइल चुनने के लिए क्लिक करें",
 
 aiPredictionDescription:
-"स्वस्थ या रोगग्रस्त पत्ती की तस्वीर अपलोड करें और एआई आधारित भविष्यवाणी, Grad-CAM दृश्य, गंभीरता विश्लेषण और उपचार सुझाव प्राप्त करें।",
+"स्वस्थ या रोगग्रस्त पत्ती की तस्वीर अपलोड करें और एआई आधारित भविष्यवाणी, Grad-CAM और Score-CAM दृश्य, गंभीरता विश्लेषण और उपचार सुझाव प्राप्त करें।",
 
 uploadLeafImageTitle:
 "पत्ती की तस्वीर अपलोड करें",
@@ -163,6 +163,15 @@ gradcamHeatmap:
 
 aiFocusRegion:
 "एआई द्वारा पहचाना गया क्षेत्र",
+
+scorecam:
+"Score-CAM",
+
+scorecamDescription:
+"AI फीचर महत्व दृश्यांकन",
+
+scorecamUnavailable:
+"स्कोर-CAM उपलब्ध नहीं है",
 
 diseaseSeverity:
 "रोग की गंभीरता",
@@ -212,6 +221,8 @@ diseasedLeaves: "रोगग्रस्त पत्तियाँ",
 averageAccuracy: "औसत सटीकता",
 
 leafSample: "पत्ती का नमूना",
+savedLeafImageUnavailable: "इस पुराने रिकॉर्ड के साथ तस्वीर सहेजी नहीं गई थी।",
+recentDetections: "हाल की पहचान",
 
 view: "देखें",
 
@@ -230,8 +241,13 @@ noHistory: "कोई भविष्यवाणी इतिहास उप�
 plantWise: "पौधे के अनुसार",
 
 predictionHistoryDescription:
-"एआई मॉडल द्वारा किए गए सभी पिछले पूर्वानुमानों की समीक्षा करें।"
+"एआई मॉडल द्वारा किए गए सभी पिछले पूर्वानुमानों की समीक्षा करें।",
+
+gradcamScore: "ग्रैड-कैम स्कोर",
+scorecamScore: "स्कोर-कैम स्कोर",
 
 };
+
+
 
 export default hi;
