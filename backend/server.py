@@ -23,10 +23,12 @@ import uuid
 from datetime import datetime, timezone
 import io
 import base64
+import gc
+import threading
 import cv2
 import numpy as np
 from PIL import Image
-from gradcam import generate_gradcam, generate_scorecam
+from new_gradcam import generate_gradcam, generate_scorecam
 from disease_info import DISEASE_INFO
 from fastapi.responses import FileResponse
 from reportlab.platypus import SimpleDocTemplate, Paragraph
@@ -41,12 +43,7 @@ load_dotenv(ROOT_DIR / '.env')
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
-    
-    print("=" * 60)
-    print("Authorization Header Received:")
-    print(repr(credentials))
-    print("=" * 60)
-    
+    """Validate the bearer token without logging credentials or user data."""
     token = credentials.credentials
 
     try:
@@ -55,34 +52,21 @@ async def get_current_user(
             SECRET_KEY,
             algorithms=[ALGORITHM]
         )
-
-        print("Payload =", payload)
-
         email = payload.get("email")
+        if not email:
+            raise HTTPException(status_code=401, detail="Invalid authentication token")
 
-        print("Email =", email)
-
-        user = await db.users.find_one({
-            "email": email
-        })
-
-        print("User =", user)
-
+        user = await db.users.find_one({"email": email})
         if user is None:
-            raise HTTPException(
-                status_code=401,
-                detail="User not found"
-            )
+            raise HTTPException(status_code=401, detail="User not found")
 
         return user
 
-    except JWTError as e:
-        print("JWT ERROR =", e)
+    except JWTError:
+        logger.warning("Authentication failed: invalid JWT")
+        raise HTTPException(status_code=401, detail="Invalid JWT")
 
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid JWT"
-        )
+
 # MongoDB connection
 
 MONGO_URL = os.getenv("MONGO_URL")
@@ -587,6 +571,10 @@ def overlay_heatmap(heatmap, image_np):
 
 
 # Inference Endpoints
+# Limit CPU thread pools to reduce memory pressure on small Render instances.
+os.environ.setdefault('TF_NUM_INTRAOP_THREADS', '1')
+os.environ.setdefault('TF_NUM_INTEROP_THREADS', '1')
+os.environ.setdefault('OMP_NUM_THREADS', '1')
 import tensorflow as tf
 
 
@@ -1269,41 +1257,47 @@ async def detect_disease(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     user = await get_current_user(credentials)
+
     try:
-        # Read image
-        uploaded_image = Image.open(file.file).convert("RGB")
+        if model is None:
+            raise HTTPException(status_code=503, detail="Prediction model is not available")
+
+        # Read once and reject unexpectedly large uploads before decoding.
+        image_bytes = await file.read()
+        if not image_bytes:
+            raise HTTPException(status_code=400, detail="Please upload an image")
+        if len(image_bytes) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Image must be 10 MB or smaller")
+
+        try:
+            with Image.open(io.BytesIO(image_bytes)) as source_image:
+                uploaded_image = source_image.convert("RGB")
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid image file")
+
+        # Save a small preview to MongoDB, not the original full-resolution image.
         thumbnail = uploaded_image.copy()
-        thumbnail.thumbnail((512, 512))
+        thumbnail.thumbnail((384, 384))
         thumbnail_buffer = io.BytesIO()
-        thumbnail.save(thumbnail_buffer, format="JPEG", quality=80, optimize=True)
+        thumbnail.save(thumbnail_buffer, format="JPEG", quality=65, optimize=True)
         leaf_image = "data:image/jpeg;base64," + base64.b64encode(
             thumbnail_buffer.getvalue()
         ).decode("ascii")
 
-        image = uploaded_image.resize((224, 224))
-
-        img_array = np.array(image) / 255.0
-        original_np = np.array(image)
+        # Model input: float32, 224x224 RGB, normalized to [0, 1].
+        resized_image = uploaded_image.resize((224, 224), Image.Resampling.BILINEAR)
+        original_np = np.asarray(resized_image, dtype=np.uint8)
+        img_array = np.asarray(resized_image, dtype=np.float32) / 255.0
+        img_array = np.expand_dims(img_array, axis=0)
 
         severity = calculate_severity(original_np)
 
-        img_array = np.expand_dims(img_array, axis=0)
-
-        if model is None:
-            raise HTTPException(
-                status_code=500,
-                detail="Model not loaded"
-            )
-
-        # Predict
-        prediction = model.predict(img_array, verbose=0)
-
+        # Direct model call avoids the extra predict() data adapter overhead.
+        prediction = model(img_array, training=False).numpy()
         predicted_index = int(np.argmax(prediction[0]))
         predicted_name = class_names[predicted_index]
+        confidence = float(np.max(prediction[0]) * 100.0)
 
-        confidence = float(np.max(prediction) * 100)
-
-        # Disease Info
         info = DISEASE_INFO.get(predicted_name, {
             "plant": "",
             "status": "",
@@ -1312,64 +1306,49 @@ async def detect_disease(
             "treatment": []
         })
 
-        # Generate GradCAM
-        gradcam_heatmap = generate_gradcam(
-            model,
-            img_array
-        )
-        gradcam_score = calculate_cam_score(
-            gradcam_heatmap
-        )
-        gradcam_overlay = overlay_heatmap(
-            gradcam_heatmap,
-            original_np
-        )
+        # Grad-CAM is the primary explanation. If it fails, do not lose the
+        # disease prediction; return an empty explanation and log the failure.
+        gradcam_base64 = None
+        gradcam_score = 0.0
+        scorecam_base64 = None
+        scorecam_score = 0.0
 
-        _, gradcam_buffer = cv2.imencode(".png", gradcam_overlay)
+        try:
+            gradcam_heatmap = generate_gradcam(model, img_array)
+            gradcam_score = calculate_cam_score(gradcam_heatmap)
+            gradcam_overlay = overlay_heatmap(gradcam_heatmap, original_np)
+            ok, gradcam_buffer = cv2.imencode(
+                ".png", gradcam_overlay,
+                [cv2.IMWRITE_PNG_COMPRESSION, 3]
+            )
+            if ok:
+                gradcam_base64 = base64.b64encode(
+                    gradcam_buffer.tobytes()
+                ).decode("ascii")
+        except Exception:
+            logger.exception("Grad-CAM generation failed")
 
-        gradcam_base64 = base64.b64encode(gradcam_buffer).decode("utf-8")
-
-        # ============================================================
-        # REAL SCORE-CAM
-        # ============================================================
-        # Generate REAL Score-CAM
+        # Score-CAM is more expensive; the updated implementation processes
+        # only a small number of channels in small batches.
         try:
             scorecam_heatmap = generate_scorecam(
                 model,
                 img_array,
-                max_channels=32
+                max_channels=8,
+                batch_size=2
             )
-
-            scorecam_score = calculate_cam_score(
-                scorecam_heatmap
+            scorecam_score = calculate_cam_score(scorecam_heatmap)
+            scorecam_overlay = overlay_heatmap(scorecam_heatmap, original_np)
+            ok, scorecam_buffer = cv2.imencode(
+                ".png", scorecam_overlay,
+                [cv2.IMWRITE_PNG_COMPRESSION, 3]
             )
-
-            
-            scorecam_overlay = overlay_heatmap(
-                scorecam_heatmap,
-                original_np
-            )
-
-            _, scorecam_buffer = cv2.imencode(
-                ".png",
-                scorecam_overlay
-            )
-
-            scorecam_base64 = base64.b64encode(
-                scorecam_buffer
-            ).decode("utf-8")
-
-        except Exception as scorecam_error:
-           logger.error(
-               f"Score-CAM failed: {scorecam_error}",
-               exc_info=True
-               )
-           scorecam_base64 = None
-           scorecam_score = 0.0
-
-        # ============================================================
-        # CSAQF CALCULATION
-        # ============================================================
+            if ok:
+                scorecam_base64 = base64.b64encode(
+                    scorecam_buffer.tobytes()
+                ).decode("ascii")
+        except Exception:
+            logger.exception("Score-CAM generation failed")
 
         csaqf_result = calculate_csaqf(
             confidence=confidence,
@@ -1377,31 +1356,18 @@ async def detect_disease(
             gqs=gradcam_score,
             sqs=scorecam_score
         )
-        # ========================================================
-        # CSAQF-V4 CALCULATION
-        # ========================================================
-
         csaqf_v4_result = calculate_csaqf_v4(
             confidence=confidence,
             severity=severity,
             gqs=gradcam_score,
             sqs=scorecam_score
         )
-
-        # ========================================================
-        # CSAQF-IMPROVED-V4 CALCULATION
-        # ========================================================
-
         csaqf_improved_v4_result = calculate_csaqf_improved_v4(
             confidence=confidence,
             severity=severity,
             gqs=gradcam_score,
             sqs=scorecam_score
         )
-        
-        # ==========================
-        # SAVE TO MONGODB
-        # ==========================
 
         prediction_doc = {
             "user_email": user["email"],
@@ -1410,123 +1376,46 @@ async def detect_disease(
             "class": predicted_name,
             "disease": predicted_name,
             "status": info["status"],
-
-            # Prediction
             "confidence": round(confidence, 2),
-
-            # Severity
             "severity": severity,
-
-            # Disease information
             "cause": info["cause"],
             "symptoms": info["symptoms"],
             "treatment": info["treatment"],
             "leaf_image": leaf_image,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "is_deleted": False,
-
-            # Grad-CAM
             "gradcam": gradcam_base64,
             "gradcam_score": gradcam_score,
-
-            # Score-CAM
             "scorecam": scorecam_base64,
             "scorecam_score": scorecam_score,
-
-            # ========================================================
-            # CSAQF
-            # ========================================================
-
             "csaqf_eta": CSAQF_ETA,
-
-            "csaqf_lambda":
-                csaqf_result["lambda"],
-
-            "csaqf_pes":
-                csaqf_result["PES"],
-
-            "csaqf_alpha":
-                csaqf_result["alpha"],
-
-            "csaqf_beta":
-                csaqf_result["beta"],
-
-            "csaqf_gamma":
-                csaqf_result["gamma"],
-
-            "csaqf_score":
-                csaqf_result["overall_score"],
-
-            "csaqf_score_percent":
-                csaqf_result["overall_score_percent"],
-        
-
-        # --------------------------------------------------------
-        # CSAQF-V4
-        # --------------------------------------------------------
-
-        "csaqf_v4_gqs_calibrated":
-            csaqf_v4_result["gqs_calibrated"],
-
-        "csaqf_v4_sqs_calibrated":
-            csaqf_v4_result["sqs_calibrated"],
-
-        "csaqf_v4_gqs_weight":
-            csaqf_v4_result["gqs_weight"],
-
-        "csaqf_v4_sqs_weight":
-            csaqf_v4_result["sqs_weight"],
-
-        "csaqf_v4_fusion":
-            csaqf_v4_result["fusion"],
-
-        "csaqf_v4_score":
-            csaqf_v4_result["overall_score"],
-
-        "csaqf_v4_score_percent":
-            csaqf_v4_result["overall_score_percent"],
-
-        # ========================================================
-        # CSAQF-IMPROVED-V4
-        # ========================================================
-
-        "csaqf_improved_v4_score":
-            csaqf_improved_v4_result["overall_score"],
-
-        "csaqf_improved_v4_score_percent":
-            csaqf_improved_v4_result["overall_score_percent"],
-
-        "csaqf_improved_v4_gqs_calibrated":
-            csaqf_improved_v4_result["gqs_calibrated"],
-
-        "csaqf_improved_v4_sqs_calibrated":
-            csaqf_improved_v4_result["sqs_calibrated"],
-
-        "csaqf_improved_v4_gqs_weight":
-            csaqf_improved_v4_result["gqs_weight"],
-
-        "csaqf_improved_v4_sqs_weight":
-            csaqf_improved_v4_result["sqs_weight"],
-
-        "csaqf_improved_v4_gqs_weight_percent":
-            csaqf_improved_v4_result["gqs_weight_percent"],
-
-        "csaqf_improved_v4_sqs_weight_percent":
-            csaqf_improved_v4_result["sqs_weight_percent"],
-
-        "csaqf_improved_v4_fusion":
-            csaqf_improved_v4_result["fusion"],
-
-        "csaqf_improved_v4_temperature":
-            csaqf_improved_v4_result["temperature"]
-
+            "csaqf_lambda": csaqf_result["lambda"],
+            "csaqf_pes": csaqf_result["PES"],
+            "csaqf_alpha": csaqf_result["alpha"],
+            "csaqf_beta": csaqf_result["beta"],
+            "csaqf_gamma": csaqf_result["gamma"],
+            "csaqf_score": csaqf_result["overall_score"],
+            "csaqf_score_percent": csaqf_result["overall_score_percent"],
+            "csaqf_v4_gqs_calibrated": csaqf_v4_result["gqs_calibrated"],
+            "csaqf_v4_sqs_calibrated": csaqf_v4_result["sqs_calibrated"],
+            "csaqf_v4_gqs_weight": csaqf_v4_result["gqs_weight"],
+            "csaqf_v4_sqs_weight": csaqf_v4_result["sqs_weight"],
+            "csaqf_v4_fusion": csaqf_v4_result["fusion"],
+            "csaqf_v4_score": csaqf_v4_result["overall_score"],
+            "csaqf_v4_score_percent": csaqf_v4_result["overall_score_percent"],
+            "csaqf_improved_v4_score": csaqf_improved_v4_result["overall_score"],
+            "csaqf_improved_v4_score_percent": csaqf_improved_v4_result["overall_score_percent"],
+            "csaqf_improved_v4_gqs_calibrated": csaqf_improved_v4_result["gqs_calibrated"],
+            "csaqf_improved_v4_sqs_calibrated": csaqf_improved_v4_result["sqs_calibrated"],
+            "csaqf_improved_v4_gqs_weight": csaqf_improved_v4_result["gqs_weight"],
+            "csaqf_improved_v4_sqs_weight": csaqf_improved_v4_result["sqs_weight"],
+            "csaqf_improved_v4_gqs_weight_percent": csaqf_improved_v4_result["gqs_weight_percent"],
+            "csaqf_improved_v4_sqs_weight_percent": csaqf_improved_v4_result["sqs_weight_percent"],
+            "csaqf_improved_v4_fusion": csaqf_improved_v4_result["fusion"],
+            "csaqf_improved_v4_temperature": csaqf_improved_v4_result["temperature"]
         }
 
         await db.detections.insert_one(prediction_doc)
-
-        # ==========================
-        # RETURN RESPONSE
-        # ==========================
 
         return {
             "plant": info["plant"],
@@ -1537,62 +1426,34 @@ async def detect_disease(
             "cause": info["cause"],
             "symptoms": info["symptoms"],
             "treatment": info["treatment"],
-
-            # Grad-CAM
             "gradcam": gradcam_base64,
             "gradcam_score": gradcam_score,
-
-            # Score-CAM
             "scorecam": scorecam_base64,
             "scorecam_score": scorecam_score,
-
-            # ========================================================
-            # ORIGINAL CSAQF
-            # ========================================================
-
             "csaqf_score": csaqf_result["overall_score"],
             "csaqf_score_percent": csaqf_result["overall_score_percent"],
+            "csaqf_v4_score": csaqf_v4_result["overall_score"],
+            "csaqf_v4_score_percent": csaqf_v4_result["overall_score_percent"],
+            "csaqf_improved_v4_score": csaqf_improved_v4_result["overall_score"],
+            "csaqf_improved_v4_score_percent": csaqf_improved_v4_result["overall_score_percent"],
+            "csaqf_improved_v4_gqs_weight_percent": csaqf_improved_v4_result["gqs_weight_percent"],
+            "csaqf_improved_v4_sqs_weight_percent": csaqf_improved_v4_result["sqs_weight_percent"],
+            "csaqf_improved_v4_fusion": csaqf_improved_v4_result["fusion"],
+            "csaqf_improved_v4_temperature": csaqf_improved_v4_result["temperature"]
+        }
 
-            # ========================================================
-            # CSAQF-V4
-            # ========================================================
-
-            
-            "csaqf_v4_score":
-                csaqf_v4_result["overall_score"],
-
-            "csaqf_v4_score_percent":
-                csaqf_v4_result["overall_score_percent"],
-
-            # ========================================================
-            # CSAQF-IMPROVED-V4
-            # ========================================================
-
-            "csaqf_improved_v4_score":
-                csaqf_improved_v4_result["overall_score"],
-
-            "csaqf_improved_v4_score_percent":
-                csaqf_improved_v4_result["overall_score_percent"],
-
-            "csaqf_improved_v4_gqs_weight_percent":
-                csaqf_improved_v4_result["gqs_weight_percent"],
-
-            "csaqf_improved_v4_sqs_weight_percent":
-                csaqf_improved_v4_result["sqs_weight_percent"],
-
-            "csaqf_improved_v4_fusion":
-                csaqf_improved_v4_result["fusion"],
-
-            "csaqf_improved_v4_temperature":
-                csaqf_improved_v4_result["temperature"]
-    }
-
-    except Exception as e:
-        logger.error(str(e))
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Inference request failed")
         raise HTTPException(
             status_code=500,
-            detail=str(e)
+            detail="Prediction failed. Check backend logs for details."
         )
+    finally:
+        # Ask Python to collect temporary objects after each inference.
+        gc.collect()
+
 
 @api_router.get("/detections")
 async def list_detections(
@@ -1689,10 +1550,18 @@ class ChatRequest(BaseModel):
 
 # Include the router in the main app
 
+_frontend_origins = [
+    "https://leaf-disease-detection-system-nine.vercel.app",
+    "https://leaf-disease-detection-system-g7bi-sigma.vercel.app",
+]
+_extra_frontend_url = os.getenv("FRONTEND_URL", "").strip().rstrip("/")
+if _extra_frontend_url and _extra_frontend_url not in _frontend_origins:
+    _frontend_origins.append(_extra_frontend_url)
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=["*"],
+    allow_origins=_frontend_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
