@@ -236,12 +236,15 @@ def generate_xai_heatmap(image_data: bytes, method: str) -> bytes:
 
 # API Endpoints
 
+
 @api_router.post("/register")
 async def register(user: UserRegister):
-    try:
-        print("REGISTER REQUEST:", user)
+    email = user.email.strip().lower()
 
-        existing = await db.users.find_one({"email": user.email})
+    try:
+        print("REGISTER REQUEST:", email)
+
+        existing = await db.users.find_one({"email": email})
 
         if existing:
             raise HTTPException(
@@ -250,8 +253,8 @@ async def register(user: UserRegister):
             )
 
         await db.users.insert_one({
-            "name": user.name,
-            "email": user.email,
+            "name": user.name.strip(),
+            "email": email,
             "password": hash_password(user.password)
         })
 
@@ -261,11 +264,14 @@ async def register(user: UserRegister):
             "message": "Registration Successful"
         }
 
+    except HTTPException:
+        raise
+
     except Exception as e:
-        print("REGISTER ERROR:", e)
+        logger.exception("REGISTER ERROR")
         raise HTTPException(
             status_code=500,
-            detail=str(e)
+            detail="Registration failed. Check backend logs."
         )
 
 @api_router.post("/login")
