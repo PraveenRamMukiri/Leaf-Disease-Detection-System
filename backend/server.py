@@ -28,7 +28,7 @@ import threading
 import cv2
 import numpy as np
 from PIL import Image
-from new_gradcam import generate_gradcam, generate_scorecam
+from gradcam import generate_gradcam, generate_scorecam
 from disease_info import DISEASE_INFO
 from fastapi.responses import FileResponse
 from reportlab.platypus import SimpleDocTemplate, Paragraph
